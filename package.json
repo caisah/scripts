@@ -1,6 +1,6 @@
 {
+  "type": "module",
   "scripts": {
-    "linkedin:profile": "bun run linkedin-profile.mjs"
   },
   "dependencies": {
     "playwright": "^1.58.2"

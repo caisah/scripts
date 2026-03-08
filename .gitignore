@@ -1,11 +1,13 @@
 node_modules/
 
 # Generated output
-scripts/output/
+src/chrome/linked/profile-activity/output/
+local-html/profile-activity/data.json
 
 # Local env files
 .env
 .env.*
+secrets.json
 
 # macOS
 .DS_Store

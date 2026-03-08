@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profile Activity</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe7;
+        --panel: rgba(255, 251, 245, 0.9);
+        --ink: #1f1a17;
+        --muted: #6d625a;
+        --line-a: #1f6f78;
+        --line-b: #d97706;
+        --grid: rgba(31, 26, 23, 0.12);
+        --border: rgba(31, 26, 23, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(31, 111, 120, 0.14), transparent 32%),
+          radial-gradient(circle at top right, rgba(217, 119, 6, 0.14), transparent 28%),
+          linear-gradient(180deg, #fbf8f2 0%, var(--bg) 100%);
+      }
+
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2rem, 5vw, 3.2rem);
+        line-height: 1;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .panel {
+        margin-top: 24px;
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--panel);
+        backdrop-filter: blur(10px);
+      }
+
+      .legend {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+        color: var(--muted);
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .swatch {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+      }
+
+      .chart {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin-top: 16px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-size: 0.95rem;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        text-align: left;
+        border-top: 1px solid var(--border);
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .empty {
+        padding: 48px 16px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      @media (max-width: 640px) {
+        main {
+          padding: 24px 14px 36px;
+        }
+
+        .panel {
+          padding: 16px;
+          border-radius: 16px;
+        }
+
+        table {
+          font-size: 0.88rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Profile Activity</h1>
+      <p>LinkedIn profile viewers and post impressions by execution time.</p>
+
+      <section class="panel">
+        <div class="legend">
+          <span><i class="swatch" style="background: var(--line-a)"></i>Profile viewers</span>
+          <span><i class="swatch" style="background: var(--line-b)"></i>Post impressions</span>
+        </div>
+        <div id="chart-root"></div>
+        <div id="table-root"></div>
+      </section>
+    </main>
+
+    <script>
+      const chartRoot = document.getElementById("chart-root");
+      const tableRoot = document.getElementById("table-root");
+
+      const toNumber = (value) => {
+        if (typeof value !== "string") {
+          return null;
+        }
+
+        const normalized = value.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+        return normalized ? Number(normalized[0]) : null;
+      };
+
+      const formatTime = (value) => new Date(value).toLocaleString();
+
+      const renderEmpty = (message) => {
+        chartRoot.innerHTML = `<div class="empty">${message}</div>`;
+        tableRoot.innerHTML = "";
+      };
+
+      const buildPath = (points) => points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`).join(" ");
+
+      const renderChart = (entries) => {
+        const width = 960;
+        const height = 420;
+        const margin = { top: 24, right: 24, bottom: 70, left: 56 };
+        const numericEntries = entries.map((entry, index) => ({
+          index,
+          timestamp: entry.timestamp,
+          profileViewers: toNumber(entry.profileViewers),
+          postImpressions: toNumber(entry.postImpressions),
+        }));
+
+        const values = numericEntries.flatMap((entry) => [entry.profileViewers, entry.postImpressions]).filter((value) => value !== null);
+
+        if (values.length === 0) {
+          renderEmpty("No numeric metric values available yet.");
+          return;
+        }
+
+        const maxValue = Math.max(...values, 1);
+        const minValue = 0;
+        const xStep = numericEntries.length > 1 ? (width - margin.left - margin.right) / (numericEntries.length - 1) : 0;
+        const toX = (index) => margin.left + xStep * index;
+        const toY = (value) => {
+          const usableHeight = height - margin.top - margin.bottom;
+          const ratio = (value - minValue) / (maxValue - minValue || 1);
+          return height - margin.bottom - ratio * usableHeight;
+        };
+
+        const linePoints = (key) => numericEntries
+          .filter((entry) => entry[key] !== null)
+          .map((entry) => ({ x: toX(entry.index), y: toY(entry[key]) }));
+
+        const viewersPath = buildPath(linePoints("profileViewers"));
+        const impressionsPath = buildPath(linePoints("postImpressions"));
+        const gridLines = Array.from({ length: 5 }, (_, index) => {
+          const value = (maxValue / 4) * index;
+          const y = toY(value);
+          return `<g><line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="var(--grid)" /><text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="12">${Math.round(value)}</text></g>`;
+        }).join("");
+
+        const labels = numericEntries.map((entry) => {
+          const x = toX(entry.index);
+          return `<text x="${x}" y="${height - margin.bottom + 24}" text-anchor="middle" fill="var(--muted)" font-size="11">${new Date(entry.timestamp).toLocaleDateString()}</text>`;
+        }).join("");
+
+        chartRoot.innerHTML = `
+          <svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Profile activity chart">
+            ${gridLines}
+            <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="var(--border)" />
+            ${viewersPath ? `<path d="${viewersPath}" fill="none" stroke="var(--line-a)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ""}
+            ${impressionsPath ? `<path d="${impressionsPath}" fill="none" stroke="var(--line-b)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ""}
+            ${numericEntries.map((entry) => {
+              const dots = [];
+              if (entry.profileViewers !== null) {
+                dots.push(`<circle cx="${toX(entry.index)}" cy="${toY(entry.profileViewers)}" r="4" fill="var(--line-a)" />`);
+              }
+              if (entry.postImpressions !== null) {
+                dots.push(`<circle cx="${toX(entry.index)}" cy="${toY(entry.postImpressions)}" r="4" fill="var(--line-b)" />`);
+              }
+              return dots.join("");
+            }).join("")}
+            ${labels}
+          </svg>
+        `;
+      };
+
+      const renderTable = (entries) => {
+        tableRoot.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Profile viewers</th>
+                <th>Post impressions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries.map((entry) => `
+                <tr>
+                  <td>${formatTime(entry.timestamp)}</td>
+                  <td>${entry.profileViewers ?? "-"}</td>
+                  <td>${entry.postImpressions ?? "-"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
+      };
+
+      fetch("./data.json", { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return response.json();
+        })
+        .then((entries) => {
+          if (!Array.isArray(entries) || entries.length === 0) {
+            renderEmpty("No profile activity entries recorded yet.");
+            return;
+          }
+
+          renderChart(entries);
+          renderTable(entries);
+        })
+        .catch((error) => {
+          renderEmpty(`Unable to load activity data: ${error.message}`);
+        });
+    </script>
+  </body>
+  </html>
