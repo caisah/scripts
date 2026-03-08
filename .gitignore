@@ -1,0 +1,11 @@
+node_modules/
+
+# Generated output
+scripts/output/
+
+# Local env files
+.env
+.env.*
+
+# macOS
+.DS_Store
