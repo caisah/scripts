@@ -32,28 +32,34 @@ type LinkedInCredentials = {
   password: string;
 };
 
+/** Writes a timestamped progress message to stderr. */
 function logStep(message: string): void {
   process.stderr.write(`[profile-activity] ${new Date().toISOString()} ${message}\n`);
 }
 
+/** Pauses execution for the provided number of milliseconds. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
+/** Ensures the artifact output directory exists. */
 async function ensureOutputDir(): Promise<void> {
   await mkdir(outputDir, { recursive: true });
 }
 
+/** Ensures the persistent Chrome profile directory exists. */
 async function ensureUserDataDir(): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
 }
 
+/** Ensures the local history data directory exists. */
 async function ensureProfileActivityDir(): Promise<void> {
   await mkdir(profileActivityDir, { recursive: true });
 }
 
+/** Launches Chrome with the persistent LinkedIn profile directory. */
 async function launchBrowserContext(): Promise<BrowserContext> {
   await ensureUserDataDir();
   logStep(`Launching persistent Chrome profile at "${userDataDir}"`);
@@ -65,6 +71,7 @@ async function launchBrowserContext(): Promise<BrowserContext> {
   });
 }
 
+/** Returns the first existing page or creates a new page in the context. */
 async function getPage(context: BrowserContext): Promise<Page> {
   const existingPage = context.pages()[0];
 
@@ -77,6 +84,7 @@ async function getPage(context: BrowserContext): Promise<Page> {
   return context.newPage();
 }
 
+/** Captures screenshot and HTML artifacts for debugging a failed run. */
 async function saveFailureArtifacts(page: Page, label: string): Promise<void> {
   await ensureOutputDir();
   const safeLabel = label.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase();
@@ -92,6 +100,7 @@ async function saveFailureArtifacts(page: Page, label: string): Promise<void> {
   }
 }
 
+/** Opens LinkedIn's login page and waits for the form to be ready. */
 async function openLoginPage(page: Page): Promise<void> {
   logStep(`Opening ${linkedInLoginUrl}`);
   await page.goto(linkedInLoginUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -99,6 +108,7 @@ async function openLoginPage(page: Page): Promise<void> {
   logStep(`Login page ready at ${page.url()}`);
 }
 
+/** Loads LinkedIn credentials from `secrets.json`. */
 async function readLinkedInCredentials(): Promise<LinkedInCredentials> {
   const raw = await readFile(secretsPath, "utf8");
   const parsed = JSON.parse(raw) as { linkedin?: Partial<LinkedInCredentials> };
@@ -112,6 +122,7 @@ async function readLinkedInCredentials(): Promise<LinkedInCredentials> {
   return { username, password };
 }
 
+/** Infers the current LinkedIn authentication state from the page URL and content. */
 async function detectAuthState(page: Page): Promise<AuthState> {
   const url = page.url();
   const bodyText = (await page.locator("body").innerText().catch(() => "")).toLowerCase();
@@ -155,6 +166,7 @@ async function detectAuthState(page: Page): Promise<AuthState> {
   return "unknown";
 }
 
+/** Polls until the page resolves to a known authentication state or times out. */
 async function waitForPostLoginState(page: Page): Promise<AuthState> {
   const deadline = Date.now() + 15_000;
 
@@ -173,6 +185,7 @@ async function waitForPostLoginState(page: Page): Promise<AuthState> {
   return "unknown";
 }
 
+/** Waits for the user to complete any manual LinkedIn verification challenge. */
 async function waitForManualVerification(page: Page): Promise<void> {
   logStep(`Waiting up to ${manualVerificationTimeoutMs / 1000}s for manual verification`);
   const deadline = Date.now() + manualVerificationTimeoutMs;
@@ -195,6 +208,7 @@ async function waitForManualVerification(page: Page): Promise<void> {
   throw new Error(`Manual verification did not complete within ${manualVerificationTimeoutMs / 1000} seconds.`);
 }
 
+/** Signs in with credentials from `secrets.json` and handles post-login verification. */
 async function loginWithSavedCredentials(page: Page): Promise<void> {
   const credentials = await readLinkedInCredentials();
   logStep(`Logging in with credentials from "${secretsPath}"`);
@@ -222,6 +236,7 @@ async function loginWithSavedCredentials(page: Page): Promise<void> {
   throw new Error(`LinkedIn login did not complete successfully. Final auth state: ${state}.`);
 }
 
+/** Reuses the saved browser session or falls back to credential-based login. */
 async function ensureAuthenticatedSession(page: Page): Promise<void> {
   logStep(`Opening ${linkedInFeedUrl} to reuse saved browser session`);
   await page.goto(linkedInFeedUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -240,6 +255,7 @@ async function ensureAuthenticatedSession(page: Page): Promise<void> {
   await loginWithSavedCredentials(page);
 }
 
+/** Verifies the current page is not a login or challenge screen. */
 function assertAuthenticatedSession(page: Page): void {
   const url = page.url();
   logStep(`Current page URL: ${url}`);
@@ -249,6 +265,7 @@ function assertAuthenticatedSession(page: Page): void {
   }
 }
 
+/** Waits for feed content markers that indicate metrics are available to scrape. */
 async function waitForFeedContent(page: Page): Promise<void> {
   logStep("Waiting for feed page body");
   await page.locator("body").waitFor({ state: "visible", timeout: 15_000 });
@@ -276,6 +293,7 @@ async function waitForFeedContent(page: Page): Promise<void> {
   }
 }
 
+/** Opens the LinkedIn feed and waits until metric-related content is available. */
 async function openFeedPage(page: Page): Promise<void> {
   logStep(`Opening ${linkedInFeedUrl}`);
   await page.goto(linkedInFeedUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -283,17 +301,21 @@ async function openFeedPage(page: Page): Promise<void> {
   await waitForFeedContent(page);
 }
 
+/** Collapses whitespace and trims a nullable text value. */
 function normalizeText(value: string | null | undefined): string {
   return value?.replace(/\s+/g, " ").trim() || "";
 }
 
+/** Extracts the profile viewer and post impression counts from the feed page. */
 async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
   logStep("Extracting feed metrics from page DOM");
 
   return page.evaluate<FeedMetrics>(() => {
+    /** Normalizes DOM text for consistent matching. */
     const normalize = (value: string | null | undefined): string => value?.replace(/\s+/g, " ").trim() || "";
     const numericPattern = /^\d[\d,]*$/;
 
+    /** Returns true when the element is visible and contains readable text. */
     const isVisible = (element: Element | null): element is HTMLElement => {
       if (!(element instanceof HTMLElement)) {
         return false;
@@ -303,6 +325,7 @@ async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
       return style.display !== "none" && style.visibility !== "hidden" && normalize(element.innerText).length > 0;
     };
 
+    /** Collects unique visible text fragments from a container subtree. */
     const collectVisibleTextItems = (container: HTMLElement) => {
       const nodes = Array.from(container.querySelectorAll<HTMLElement>("*"));
       const items: Array<{ element: HTMLElement; text: string }> = [];
@@ -326,6 +349,7 @@ async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
       return items;
     };
 
+    /** Finds the numeric value adjacent to a matching metric label. */
     const extractFromItems = (items: Array<{ element: HTMLElement; text: string }>, label: string): string | null => {
       const normalizedLabel = label.toLowerCase();
       const labelIndex = items.findIndex((item) => item.text.toLowerCase() === normalizedLabel);
@@ -353,6 +377,7 @@ async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
       return null;
     };
 
+    /** Returns nearby visible text to aid debugging when extraction fails. */
     const summarizeWindow = (items: Array<{ element: HTMLElement; text: string }>, label: string): string => {
       const normalizedLabel = label.toLowerCase();
       const labelIndex = items.findIndex((item) => item.text.toLowerCase() === normalizedLabel);
@@ -367,6 +392,7 @@ async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
         .join(" | ");
     };
 
+    /** Locates a metric label in the DOM and resolves its numeric value. */
     const metricValueFromLabel = (label: string): string => {
       const normalizedLabel = label.toLowerCase();
       const candidates = Array.from(document.querySelectorAll<HTMLElement>("body *"));
@@ -423,6 +449,7 @@ async function extractFeedMetrics(page: Page): Promise<FeedMetrics> {
   });
 }
 
+/** Reads previously stored metric history from disk. */
 async function readHistory(): Promise<HistoryEntry[]> {
   try {
     const raw = await readFile(profileActivityDataPath, "utf8");
@@ -439,6 +466,7 @@ async function readHistory(): Promise<HistoryEntry[]> {
   }
 }
 
+/** Appends the current metric snapshot to the local history file. */
 async function appendHistoryEntry(data: FeedMetrics): Promise<void> {
   await ensureProfileActivityDir();
   const history = await readHistory();
@@ -453,11 +481,13 @@ async function appendHistoryEntry(data: FeedMetrics): Promise<void> {
   logStep(`Appended history entry to "${profileActivityDataPath}"`);
 }
 
+/** Logs and prints the extracted metrics as formatted JSON. */
 function printMetrics(data: FeedMetrics): void {
   logStep(`Extracted metrics: ${JSON.stringify(data)}`);
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
+/** Runs the full LinkedIn scrape flow and persists the extracted metrics. */
 async function main(): Promise<void> {
   logStep("Starting LinkedIn profile activity scrape");
   let context: BrowserContext | null = null;
