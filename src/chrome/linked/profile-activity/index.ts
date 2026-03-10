@@ -2,23 +2,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { chromium, type BrowserContext, type Page } from "playwright";
 
 const linkedInLoginUrl = "https://www.linkedin.com/login";
 const linkedInFeedUrl = "https://www.linkedin.com/feed/";
 const manualVerificationTimeoutMs = 30_000;
 const scriptDir = fileURLToPath(new URL(".", import.meta.url));
 const outputDir = path.join(scriptDir, "output");
-const secretsPath = fileURLToPath(new URL("../../../../secrets.json", import.meta.url));
+const userDataDir = path.join(scriptDir, ".playwright-linkedin-profile");
 const profileActivityDir = fileURLToPath(new URL("../../../../local-html/profile-activity", import.meta.url));
 const profileActivityDataPath = path.join(profileActivityDir, "data.json");
-
-type Secrets = {
-  linkedin: {
-    username: string;
-    password: string;
-  };
-};
+const secretsPath = fileURLToPath(new URL("../../../../secrets.json", import.meta.url));
 
 type AuthState = "authenticated" | "invalid_credentials" | "verification_required" | "login_required" | "unknown";
 
@@ -31,6 +25,11 @@ type HistoryEntry = {
   timestamp: string;
   profileViewers: string | null;
   postImpressions: string | null;
+};
+
+type LinkedInCredentials = {
+  username: string;
+  password: string;
 };
 
 function logStep(message: string): void {
@@ -47,44 +46,33 @@ async function ensureOutputDir(): Promise<void> {
   await mkdir(outputDir, { recursive: true });
 }
 
+async function ensureUserDataDir(): Promise<void> {
+  await mkdir(userDataDir, { recursive: true });
+}
+
 async function ensureProfileActivityDir(): Promise<void> {
   await mkdir(profileActivityDir, { recursive: true });
 }
 
-async function readSecrets(): Promise<Secrets> {
-  logStep(`Reading secrets from "${secretsPath}"`);
-  const raw = await readFile(secretsPath, "utf8");
-  const parsed = JSON.parse(raw) as Partial<Secrets>;
-  const username = parsed.linkedin?.username?.trim();
-  const password = parsed.linkedin?.password?.trim();
-
-  if (!username || !password) {
-    throw new Error(`Set non-empty linkedin.username and linkedin.password in "${secretsPath}".`);
-  }
-
-  return {
-    linkedin: {
-      username,
-      password,
-    },
-  };
-}
-
-async function launchBrowser(): Promise<Browser> {
-  logStep("Launching headless Chrome");
-  return chromium.launch({
+async function launchBrowserContext(): Promise<BrowserContext> {
+  await ensureUserDataDir();
+  logStep(`Launching persistent Chrome profile at "${userDataDir}"`);
+  return chromium.launchPersistentContext(userDataDir, {
     channel: "chrome",
-    headless: true,
+    headless: false,
     timeout: 30_000,
+    viewport: { width: 1280, height: 800 },
   });
 }
 
-async function createContext(browser: Browser): Promise<BrowserContext> {
-  logStep("Creating browser context");
-  return browser.newContext();
-}
-
 async function getPage(context: BrowserContext): Promise<Page> {
+  const existingPage = context.pages()[0];
+
+  if (existingPage) {
+    logStep("Using existing page from persistent context");
+    return existingPage;
+  }
+
   logStep("Creating page");
   return context.newPage();
 }
@@ -111,14 +99,17 @@ async function openLoginPage(page: Page): Promise<void> {
   logStep(`Login page ready at ${page.url()}`);
 }
 
-async function submitCredentials(page: Page, secrets: Secrets): Promise<void> {
-  logStep("Submitting LinkedIn credentials");
-  await page.locator("#username").fill(secrets.linkedin.username);
-  await page.locator("#password").fill(secrets.linkedin.password);
+async function readLinkedInCredentials(): Promise<LinkedInCredentials> {
+  const raw = await readFile(secretsPath, "utf8");
+  const parsed = JSON.parse(raw) as { linkedin?: Partial<LinkedInCredentials> };
+  const username = parsed.linkedin?.username?.trim();
+  const password = parsed.linkedin?.password;
 
-  const submitButton = page.locator('button[type="submit"]');
-  await submitButton.waitFor({ state: "visible", timeout: 15_000 });
-  await submitButton.click();
+  if (!username || !password) {
+    throw new Error(`LinkedIn credentials are missing in "${secretsPath}".`);
+  }
+
+  return { username, password };
 }
 
 async function detectAuthState(page: Page): Promise<AuthState> {
@@ -204,9 +195,36 @@ async function waitForManualVerification(page: Page): Promise<void> {
   throw new Error(`Manual verification did not complete within ${manualVerificationTimeoutMs / 1000} seconds.`);
 }
 
-async function loginToLinkedIn(page: Page, secrets: Secrets): Promise<void> {
+async function loginWithSavedCredentials(page: Page): Promise<void> {
+  const credentials = await readLinkedInCredentials();
+  logStep(`Logging in with credentials from "${secretsPath}"`);
   await openLoginPage(page);
-  await submitCredentials(page, secrets);
+  await page.locator("#username").fill(credentials.username);
+  await page.locator("#password").fill(credentials.password);
+  await page.locator('button[type="submit"]').click();
+
+  const state = await waitForPostLoginState(page);
+
+  if (state === "authenticated") {
+    return;
+  }
+
+  if (state === "verification_required") {
+    logStep("Credential login requires manual verification");
+    await waitForManualVerification(page);
+    return;
+  }
+
+  if (state === "invalid_credentials") {
+    throw new Error("LinkedIn rejected the credentials from secrets.json.");
+  }
+
+  throw new Error(`LinkedIn login did not complete successfully. Final auth state: ${state}.`);
+}
+
+async function ensureAuthenticatedSession(page: Page): Promise<void> {
+  logStep(`Opening ${linkedInFeedUrl} to reuse saved browser session`);
+  await page.goto(linkedInFeedUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
   const state = await waitForPostLoginState(page);
 
@@ -215,15 +233,11 @@ async function loginToLinkedIn(page: Page, secrets: Secrets): Promise<void> {
   }
 
   if (state === "invalid_credentials") {
-    throw new Error("LinkedIn rejected the provided credentials.");
+    throw new Error("LinkedIn rejected the saved session.");
   }
 
-  if (state === "verification_required" || state === "login_required" || state === "unknown") {
-    await waitForManualVerification(page);
-    return;
-  }
-
-  throw new Error(`Unhandled authentication state: ${state}`);
+  logStep("Saved browser session unavailable; falling back to secrets.json credentials");
+  await loginWithSavedCredentials(page);
 }
 
 function assertAuthenticatedSession(page: Page): void {
@@ -446,16 +460,13 @@ function printMetrics(data: FeedMetrics): void {
 
 async function main(): Promise<void> {
   logStep("Starting LinkedIn profile activity scrape");
-  let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let page: Page | null = null;
 
   try {
-    const secrets = await readSecrets();
-    browser = await launchBrowser();
-    context = await createContext(browser);
+    context = await launchBrowserContext();
     page = await getPage(context);
-    await loginToLinkedIn(page, secrets);
+    await ensureAuthenticatedSession(page);
     await openFeedPage(page);
     const data = await extractFeedMetrics(page);
     await appendHistoryEntry(data);
@@ -473,9 +484,9 @@ async function main(): Promise<void> {
     logStep(`Failure: ${message}`);
     throw error;
   } finally {
-    if (browser) {
+    if (context) {
       logStep("Closing browser");
-      await browser.close();
+      await context.close();
     }
   }
 }

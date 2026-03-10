@@ -2,6 +2,7 @@ node_modules/
 
 # Generated output
 src/chrome/linked/profile-activity/output/
+src/chrome/linked/profile-activity/.playwright-linkedin-profile/
 local-html/profile-activity/data.json
 
 # Local env files
