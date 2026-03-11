@@ -1,7 +1,15 @@
 {
+  "name": "scripts",
+  "version": "1.0.0",
+  "description": "Automation and utility scripts.",
+  "private": true,
   "type": "module",
+  "main": "index.ts",
   "scripts": {
   },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
   "dependencies": {
     "playwright": "^1.58.2"
   }
