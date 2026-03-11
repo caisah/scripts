@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+opencode session list
+
+sessions_json="$(opencode session list --format json)"
+session_id="$(printf '%s\n' "$sessions_json" | jq -r '.[0].id // empty')"
+
+if [[ -z "$session_id" ]]; then
+    printf 'No OpenCode sessions found.\n' >&2
+    exit 1
+fi
+
+osascript - "$session_id" <<'APPLESCRIPT'
+on run argv
+    set sessionId to item 1 of argv
+    set forkCommand to "opencode --session " & quoted form of sessionId & " --fork"
+
+    tell application "iTerm"
+        if exists current window then
+            tell current window
+                create tab with default profile
+                tell current session
+                    write text forkCommand
+                end tell
+            end tell
+        else
+            create window with default profile
+            tell current session of current window
+                write text forkCommand
+            end tell
+        end if
+    end tell
+end run
+APPLESCRIPT
