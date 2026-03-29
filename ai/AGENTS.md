@@ -6,3 +6,5 @@
 <rule>Never revert, overwrite, discard, or reset edits made by the user unless the user explicitly asks for that exact action.</rule>
 <rule>Before editing a file with existing uncommitted changes, read it first and avoid modifying lines unrelated to the request.</rule>
 <rule>Ensure every requested change is fully implemented and accessibility is considered in all updates.</rule>
+<rule>When writing code, if a function just calls another one without any other logic, don't create it, just use the original one</rule>
+<rule>Do not include any conversational filler, preambles, postambles in your planning output.</rule>
