@@ -12,3 +12,4 @@ secrets.json
 
 # macOS
 .DS_Store
+.logs
