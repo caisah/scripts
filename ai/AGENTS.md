@@ -7,4 +7,5 @@
 <rule>Before editing a file with existing uncommitted changes, read it first and avoid modifying lines unrelated to the request.</rule>
 <rule>Ensure every requested change is fully implemented and accessibility is considered in all updates.</rule>
 <rule>When writing code, if a function just calls another one without any other logic, don't create it, just use the original one</rule>
+<rule>Before adding any code functionality, try to see if you find some other helper function you can reuse. Only if one doesn't exist write some functionality from scratch</rule>
 <rule>Do not include any conversational filler, preambles, postambles in your planning output.</rule>
