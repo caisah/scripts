@@ -57,18 +57,20 @@
         backdrop-filter: blur(10px);
       }
 
-      .legend {
-        display: flex;
-        gap: 16px;
-        flex-wrap: wrap;
-        margin-top: 12px;
-        color: var(--muted);
+      .metric-section {
+        margin-top: 20px;
       }
 
-      .legend span {
+      .metric-section h2 {
+        margin: 0 0 10px;
+        font-size: 1.05rem;
+      }
+
+      .legend {
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        color: var(--muted);
       }
 
       .swatch {
@@ -82,6 +84,10 @@
         height: auto;
         display: block;
         margin-top: 16px;
+      }
+
+      .table-group {
+        margin-top: 12px;
       }
 
       table {
@@ -131,18 +137,12 @@
       <p>LinkedIn profile viewers and post impressions by execution time.</p>
 
       <section class="panel">
-        <div class="legend">
-          <span><i class="swatch" style="background: var(--line-a)"></i>Profile viewers</span>
-          <span><i class="swatch" style="background: var(--line-b)"></i>Post impressions</span>
-        </div>
         <div id="chart-root"></div>
-        <div id="table-root"></div>
       </section>
     </main>
 
     <script>
       const chartRoot = document.getElementById("chart-root");
-      const tableRoot = document.getElementById("table-root");
 
       const toNumber = (value) => {
         if (typeof value !== "string") {
@@ -157,27 +157,38 @@
 
       const renderEmpty = (message) => {
         chartRoot.innerHTML = `<div class="empty">${message}</div>`;
-        tableRoot.innerHTML = "";
       };
 
       const buildPath = (points) => points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`).join(" ");
 
-      const renderChart = (entries) => {
+      const getLabelIndexes = (length, maxLabels = 6) => {
+        if (length <= maxLabels) {
+          return new Set(Array.from({ length }, (_, index) => index));
+        }
+
+        const step = (length - 1) / (maxLabels - 1);
+        return new Set(Array.from({ length: maxLabels }, (_, index) => Math.round(index * step)));
+      };
+
+      const renderMetricChart = ({ entries, key, title, color, ariaLabel }) => {
         const width = 960;
         const height = 420;
         const margin = { top: 24, right: 24, bottom: 70, left: 56 };
         const numericEntries = entries.map((entry, index) => ({
           index,
           timestamp: entry.timestamp,
-          profileViewers: toNumber(entry.profileViewers),
-          postImpressions: toNumber(entry.postImpressions),
+          value: toNumber(entry[key]),
         }));
 
-        const values = numericEntries.flatMap((entry) => [entry.profileViewers, entry.postImpressions]).filter((value) => value !== null);
+        const values = numericEntries.map((entry) => entry.value).filter((value) => value !== null);
 
         if (values.length === 0) {
-          renderEmpty("No numeric metric values available yet.");
-          return;
+          return `
+            <div class="metric-section">
+              <h2>${title}</h2>
+              <div class="empty">No numeric metric values available yet.</div>
+            </div>
+          `;
         }
 
         const maxValue = Math.max(...values, 1);
@@ -190,65 +201,87 @@
           return height - margin.bottom - ratio * usableHeight;
         };
 
-        const linePoints = (key) => numericEntries
-          .filter((entry) => entry[key] !== null)
-          .map((entry) => ({ x: toX(entry.index), y: toY(entry[key]) }));
+        const points = numericEntries
+          .filter((entry) => entry.value !== null)
+          .map((entry) => ({ x: toX(entry.index), y: toY(entry.value) }));
 
-        const viewersPath = buildPath(linePoints("profileViewers"));
-        const impressionsPath = buildPath(linePoints("postImpressions"));
+        const metricPath = buildPath(points);
         const gridLines = Array.from({ length: 5 }, (_, index) => {
           const value = (maxValue / 4) * index;
           const y = toY(value);
           return `<g><line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="var(--grid)" /><text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" fill="var(--muted)" font-size="12">${Math.round(value)}</text></g>`;
         }).join("");
 
-        const labels = numericEntries.map((entry) => {
-          const x = toX(entry.index);
-          return `<text x="${x}" y="${height - margin.bottom + 24}" text-anchor="middle" fill="var(--muted)" font-size="11">${new Date(entry.timestamp).toLocaleDateString()}</text>`;
-        }).join("");
+        const labelIndexes = getLabelIndexes(numericEntries.length);
+        const labels = numericEntries
+          .filter((entry) => labelIndexes.has(entry.index))
+          .map((entry) => {
+            const x = toX(entry.index);
+            return `<text x="${x}" y="${height - margin.bottom + 24}" text-anchor="middle" fill="var(--muted)" font-size="11">${new Date(entry.timestamp).toLocaleDateString()}</text>`;
+          }).join("");
 
-        chartRoot.innerHTML = `
-          <svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Profile activity chart">
-            ${gridLines}
-            <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="var(--border)" />
-            ${viewersPath ? `<path d="${viewersPath}" fill="none" stroke="var(--line-a)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ""}
-            ${impressionsPath ? `<path d="${impressionsPath}" fill="none" stroke="var(--line-b)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ""}
-            ${numericEntries.map((entry) => {
-              const dots = [];
-              if (entry.profileViewers !== null) {
-                dots.push(`<circle cx="${toX(entry.index)}" cy="${toY(entry.profileViewers)}" r="4" fill="var(--line-a)" />`);
-              }
-              if (entry.postImpressions !== null) {
-                dots.push(`<circle cx="${toX(entry.index)}" cy="${toY(entry.postImpressions)}" r="4" fill="var(--line-b)" />`);
-              }
-              return dots.join("");
-            }).join("")}
-            ${labels}
-          </svg>
+        return `
+          <div class="metric-section">
+            <h2>${title}</h2>
+            <div class="legend"><i class="swatch" style="background: ${color}"></i>${title}</div>
+            <svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">
+              ${gridLines}
+              <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="var(--border)" />
+              ${metricPath ? `<path d="${metricPath}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ""}
+              ${numericEntries.map((entry) => entry.value !== null
+                ? `<circle cx="${toX(entry.index)}" cy="${toY(entry.value)}" r="4" fill="${color}" />`
+                : "").join("")}
+              ${labels}
+            </svg>
+          </div>
         `;
       };
 
-      const renderTable = (entries) => {
-        tableRoot.innerHTML = `
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Profile viewers</th>
-                <th>Post impressions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${entries.map((entry) => `
+      const renderMetricTable = ({ entries, key, title }) => `
+          <div class="table-group">
+            <table aria-label="${title} by date">
+              <thead>
                 <tr>
-                  <td>${formatTime(entry.timestamp)}</td>
-                  <td>${entry.profileViewers ?? "-"}</td>
-                  <td>${entry.postImpressions ?? "-"}</td>
+                  <th>Date</th>
+                  <th>${title}</th>
                 </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        `;
+              </thead>
+              <tbody>
+                ${entries.map((entry) => `
+                  <tr>
+                    <td>${formatTime(entry.timestamp)}</td>
+                    <td>${entry[key] ?? "-"}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>`;
+
+      const renderCharts = (entries) => {
+        chartRoot.innerHTML = [
+          `${renderMetricChart({
+            entries,
+            key: "profileViewers",
+            title: "Profile viewers",
+            color: "var(--line-a)",
+            ariaLabel: "Profile viewers chart",
+          })}${renderMetricTable({
+            entries,
+            key: "profileViewers",
+            title: "Profile viewers",
+          })}`,
+          `${renderMetricChart({
+            entries,
+            key: "postImpressions",
+            title: "Post impressions",
+            color: "var(--line-b)",
+            ariaLabel: "Post impressions chart",
+          })}${renderMetricTable({
+            entries,
+            key: "postImpressions",
+            title: "Post impressions",
+          })}`,
+        ].join("");
       };
 
       fetch("./data.json", { cache: "no-store" })
@@ -264,8 +297,7 @@
             return;
           }
 
-          renderChart(entries);
-          renderTable(entries);
+          renderCharts(entries);
         })
         .catch((error) => {
           renderEmpty(`Unable to load activity data: ${error.message}`);
