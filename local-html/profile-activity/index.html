@@ -90,10 +90,39 @@
         margin-top: 12px;
       }
 
+      .table-group summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--ink);
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .table-group summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .table-group summary::after {
+        content: "+";
+        flex: 0 0 auto;
+        font-size: 1.15rem;
+        line-height: 1;
+      }
+
+      .table-group[open] summary::after {
+        content: "-";
+      }
+
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 20px;
+        margin-top: 12px;
         font-size: 0.95rem;
       }
 
@@ -237,8 +266,12 @@
         `;
       };
 
-      const renderMetricTable = ({ entries, key, title }) => `
-          <div class="table-group">
+      const renderMetricTable = ({ entries, key, title }) => {
+        const newestFirstEntries = [...entries].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        return `
+          <details class="table-group">
+            <summary>${title} table data</summary>
             <table aria-label="${title} by date">
               <thead>
                 <tr>
@@ -247,7 +280,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${entries.map((entry) => `
+                ${newestFirstEntries.map((entry) => `
                   <tr>
                     <td>${formatTime(entry.timestamp)}</td>
                     <td>${entry[key] ?? "-"}</td>
@@ -255,7 +288,8 @@
                 `).join("")}
               </tbody>
             </table>
-          </div>`;
+          </details>`;
+      };
 
       const renderCharts = (entries) => {
         chartRoot.innerHTML = [
