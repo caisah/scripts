@@ -10,4 +10,4 @@
 <rule>Before adding any code functionality, try to see if you find some other helper function you can reuse. Only if one doesn't exist write some functionality from scratch</rule>
 <rule>Do not include any conversational filler, preambles, postambles in your planning output.</rule>
 
-<rule>When committing changes, include co-author trailers per ai/CO_AUTHORS.md.</rule>
+<rule>When committing changes, include co-author trailers per ai/CO_AUTHORS.md. Always include BOTH the host tool AND model trailers when both exist (e.g., opencode + GPT).</rule>
