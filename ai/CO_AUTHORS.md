@@ -1,4 +1,4 @@
-Add a `Co-authored-by` trailer for each distinct tool or model involved in authoring the commit. If the CLI host and the underlying model have separate trailers, include BOTH.
+Add a `Co-authored-by` trailer for each distinct tool or model involved in authoring the commit. If the CLI host and the underlying model have separate trailers, include BOTH. Include co-author trailers in a single contiguous trailer block.
 
 Known co-author trailers:
 - `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` - host tool; include when using copilot cli
