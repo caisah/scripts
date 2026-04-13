@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# update brew
 brew update
+# upgrade packages
 brew upgrade
+# upgrade cask packages
+brew upgrade --cask
+# remove any unused homebrew stuff
 brew cleanup
-npm upgrade -g
+# update all global packages
+npm update -g
