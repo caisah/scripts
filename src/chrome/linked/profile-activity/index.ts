@@ -65,7 +65,7 @@ async function launchBrowserContext(): Promise<BrowserContext> {
   logStep(`Launching persistent Chrome profile at "${userDataDir}"`);
   return chromium.launchPersistentContext(userDataDir, {
     channel: "chrome",
-    headless: false,
+    headless: true,
     timeout: 30_000,
     viewport: { width: 1280, height: 800 },
   });
