@@ -10,4 +10,4 @@ brew upgrade --cask
 # remove any unused homebrew stuff
 brew cleanup
 # update all global packages
-npm update -g
+vp update -g
